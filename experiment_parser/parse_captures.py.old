@@ -1,0 +1,101 @@
+#!/usr/bin/python
+
+import re
+import sys
+from scapy.all import *
+
+starting_pkt_parsing_re = re.compile("txpower:(?P<txpower>[0-9]+),delay:(?P<delay>[0-9A-F]{4}),bitmask:(?P<bitmask>[0-9A-F]{4})")
+#ending_pkt_parsing_re = re.compile("tdma_count1:(?P<tdma_count1>[0-9A-F]{4}),tdma_count2:(?P<tdma_count2>[0-9A-F]{4})")
+ending_pkt_parsing_re = re.compile("r57:[ ]+(?P<tdma_count1>[0-9A-F]{4})[ ]+r58:[ ]+(?P<tdma_count2>[0-9A-F]{4})")
+
+nodes_list = set(["aa:bb:cc:ee:dd:ff", "ff:ff:ff:ff:ff:ff", "00:16:ce:27:79:43", "00:14:a4:28:a6:4e", "00:03:c9:df:ed:81"])
+
+node1 = "00:14:a4:28:a6:4e"
+node2 = "00:03:c9:df:ed:81"
+
+sending_nodes = [node1, node2]
+
+
+def main():
+
+    print "Loading " + sys.argv[1]
+    raw_pkt_list = rdpcap(sys.argv[1]) 
+    print repr(raw_pkt_list)
+    print "Loaded %d packets" % (len(raw_pkt_list))
+
+    # filter pkt from unknown nodes
+    raw_pkt_list = [ i for i in raw_pkt_list if (i[Dot11].addr1 in nodes_list) or (i[Dot11].addr2 in nodes_list)]
+
+    print "Filtered %d packets" % (len(raw_pkt_list))
+
+    # keep only UDP pkt
+    raw_pkt_list = [i for i in raw_pkt_list if i.haslayer(UDP)]
+
+    print "Filtered %d UDP packets" % (len(raw_pkt_list))
+
+    print "Split pkt of different stations"
+    node_pkt = []
+    for j in sending_nodes:
+        node_pkt.append( [i for i in raw_pkt_list if i[Dot11].addr2 == j])
+        print "Pkt from node %s: %d" % (j, len(node_pkt[len(node_pkt)-1]))
+
+    print "Split different tests:"
+
+    test_list = []
+
+    for c, node in enumerate(sending_nodes):
+        test_list.append([i for i in split_different_test(node_pkt[c])])
+        print "Node %s: " % (str(node))
+        
+        for cc, j in enumerate(test_list[len(test_list)-1]):
+            print "Test n %d: number of pkt: %d" % (cc, len(j))
+            print repr(calc_test_stats(j))
+
+
+def split_different_test(pkt_list):
+    ''' Split pkt list in sublist. start from a udp pkt to 7144 port. end on a udp pkt to 7145 port '''
+    # find first udp7144 pkt
+    start_delimiter = 0
+    for c,i in enumerate(pkt_list):
+        if i[UDP].dport == 7144:
+            start_delimiter = c
+            break
+
+    #remove first part
+    local_list = pkt_list[:]
+    local_list = local_list[start_delimiter:]
+
+    actual_split = []
+    for i in local_list:
+        if i[UDP].dport == 7144: #starting pkt
+            actual_split = []
+            actual_split.append(i)
+        elif i[UDP].dport == 7145: #ending pkt
+            actual_split.append(i)
+            yield actual_split[:]
+        else:
+            actual_split.append(i)
+
+def calc_test_stats(test):
+    info = parse_starting_pkt(test[0])
+    info.update( parse_ending_pkt(test[len(test)-1]))
+    info['correct_received_pkt'] = len(test) - 2
+    return info
+
+def parse_starting_pkt(pkt):
+    ''' This method return a dict containing all the info parsed from the starting pkt (udp7144)'''
+    res = starting_pkt_parsing_re.match(pkt)
+    if res is None:
+        raise ValueError("Cazzi amari")
+    return res.groupdict()
+
+def parse_ending_pkt(pkt):
+    ''' This method return a dict containing all the info parsed from the ending pkt (udp7145)'''
+    res = starting_pkt_parsing_re.match(pkt)
+    if res is None:
+        raise ValueError("Cazzi amari")
+    #FIXME unisci i due tdma counter
+    return res.groupdict()
+
+if __name__ == "__main__":
+    main()
