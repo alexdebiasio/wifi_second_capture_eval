@@ -1,0 +1,13 @@
+Host w39
+    Hostname 10.0.0.39
+    User wireless
+Host w37
+    Hostname 10.0.0.37
+    User wireless
+Host w34
+    Hostname 10.0.0.34
+    User wireless
+
+Host w100
+    Hostname 10.0.0.100
+    User wireless
